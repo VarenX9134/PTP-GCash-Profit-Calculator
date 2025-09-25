@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PTP GCash Profit Calculator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-6">
+
+  <h1 class="text-3xl font-bold mb-6 text-gray-800">PTP GCash Profit Calculator</h1>
+
+  <!-- Calculator -->
+  <div class="bg-white shadow-lg rounded-2xl p-6 w-full max-w-4xl mb-6">
+    <h2 class="text-xl font-semibold mb-4 text-gray-700">Trade Calculator</h2>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Side A -->
+      <div>
+        <h3 class="font-medium text-gray-600 mb-2">You Give</h3>
+        <div id="sideA" class="space-y-2"></div>
+        <button onclick="addPet('sideA')" class="mt-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">+ Add Pet</button>
+        <p class="mt-2 font-semibold text-gray-700">Total: <span id="totalA">0</span></p>
+      </div>
+
+      <!-- Side B -->
+      <div>
+        <h3 class="font-medium text-gray-600 mb-2">You Get</h3>
+        <div id="sideB" class="space-y-2"></div>
+        <button onclick="addPet('sideB')" class="mt-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">+ Add Pet</button>
+        <p class="mt-2 font-semibold text-gray-700">Total: <span id="totalB">0</span></p>
+      </div>
+    </div>
+
+    <!-- Result -->
+    <div class="mt-6 p-4 rounded-xl bg-gray-50 border">
+      <h3 class="text-lg font-semibold mb-2">Result</h3>
+      <p id="result" class="text-gray-700"></p>
+      <p id="profitLoss" class="text-gray-500 text-sm mt-1"></p>
+    </div>
+  </div>
+
+  <!-- Toggle Button -->
+  <button onclick="toggleDatabase()" class="mb-4 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800">
+    📂 Show/Hide Database Manager
+  </button>
+
+  <!-- Database Section -->
+  <div id="databaseSection" class="hidden bg-white shadow-lg rounded-2xl p-6 w-full max-w-4xl">
+    <h2 class="text-xl font-semibold mb-4 text-gray-700">📋 Pet Database Manager</h2>
+
+    <!-- Add Pet Form -->
+    <div class="mb-4 flex space-x-2">
+      <input id="newPetName" type="text" placeholder="Pet Name" class="p-2 border rounded w-1/3">
+      <button onclick="addNewPet()" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">+ Add Pet</button>
+    </div>
+
+    <!-- Database Table -->
+    <table class="w-full border-collapse mt-4">
+      <thead>
+        <tr class="bg-gray-200">
+          <th class="border px-3 py-2">Pet</th>
+          <th class="border px-3 py-2">Variation</th>
+          <th class="border px-3 py-2">Price</th>
+          <th class="border px-3 py-2">Action</th>
+        </tr>
+      </thead>
+      <tbody id="petTable"></tbody>
+    </table>
+  </div>
+
+  <script>
+    let pets = {};
+    const variations = ["No Pot","F","R","FR","N","NF","NR","NFR","M","MF","MR","MFR"];
+
+    // ✅ Load pets from Netlify API
+    async function loadPets() {
+      const res = await fetch("/api/get-pets");
+      pets = await res.json();
+      renderTable();
+      calculate();
+    }
+
+    // ✅ Save pets to Netlify API
+    async function savePets() {
+      await fetch("/api/update-pets", {
+        method: "POST",
+        body: JSON.stringify(pets)
+      });
+    }
+
+    // Toggle database visibility
+    function toggleDatabase() {
+      const db = document.getElementById("databaseSection");
+      db.classList.toggle("hidden");
+    }
+
+    // Add a new pet
+    function addNewPet() {
+      const petName = document.getElementById("newPetName").value.trim();
+      if (!petName) return alert("Please enter a pet name.");
+      if (pets[petName]) return alert("Pet already exists.");
+
+      pets[petName] = {};
+      variations.forEach(v => pets[petName][v] = 0);
+
+      document.getElementById("newPetName").value = "";
+      renderTable();
+      savePets();
+    }
+
+    // Render pet database
+    function renderTable() {
+      const table = document.getElementById("petTable");
+      table.innerHTML = "";
+      for (const pet in pets) {
+        for (const v in pets[pet]) {
+          table.innerHTML += `
+            <tr>
+              <td class="border px-3 py-2">${pet}</td>
+              <td class="border px-3 py-2">${v}</td>
+              <td class="border px-3 py-2">
+                <input type="number" value="${pets[pet][v]}" 
+                  onchange="editPrice('${pet}','${v}',this.value)" 
+                  class="w-24 p-1 border rounded">
+              </td>
+              <td class="border px-3 py-2">
+                <button onclick="removePet('${pet}')" class="text-red-500">🗑 Remove</button>
+              </td>
+            </tr>`;
+        }
+      }
+    }
+
+    // Edit price
+    function editPrice(pet, variation, newValue) {
+      const val = parseInt(newValue);
+      if (!isNaN(val)) {
+        pets[pet][variation] = val;
+        calculate();
+        savePets();
+      }
+    }
+
+    // Remove pet
+    function removePet(petName) {
+      if (confirm(`Remove ${petName}?`)) {
+        delete pets[petName];
+        renderTable();
+        savePets();
+      }
+    }
+
+    // Add pet to trade side
+    function addPet(side) {
+      const container = document.getElementById(side);
+      const div = document.createElement("div");
+      div.className = "flex items-center space-x-2";
+
+      const petSelect = document.createElement("select");
+      petSelect.className = "p-2 border rounded-lg";
+      Object.keys(pets).forEach(p => {
+        let opt = document.createElement("option");
+        opt.value = p;
+        opt.textContent = p;
+        petSelect.appendChild(opt);
+      });
+
+      const varSelect = document.createElement("select");
+      varSelect.className = "p-2 border rounded-lg";
+      variations.forEach(v => {
+        let opt = document.createElement("option");
+        opt.value = v;
+        opt.textContent = v;
+        varSelect.appendChild(opt);
+      });
+
+      const priceInput = document.createElement("span");
+      priceInput.className = "px-2 text-gray-700 font-medium";
+      priceInput.textContent = "₱0";
+
+      function updatePrice() {
+        const pet = petSelect.value;
+        const variation = varSelect.value;
+        const price = pets[pet]?.[variation] ?? 0;
+        priceInput.textContent = `₱${price}`;
+        calculate();
+      }
+
+      petSelect.onchange = updatePrice;
+      varSelect.onchange = updatePrice;
+
+      const removeBtn = document.createElement("button");
+      removeBtn.textContent = "❌";
+      removeBtn.className = "ml-2 text-red-500";
+      removeBtn.onclick = () => {
+        div.remove();
+        calculate();
+      };
+
+      div.appendChild(petSelect);
+      div.appendChild(varSelect);
+      div.appendChild(priceInput);
+      div.appendChild(removeBtn);
+      container.appendChild(div);
+
+      updatePrice();
+    }
+
+    // Calculate trade totals
+    function calculate() {
+      let totalA = 0, totalB = 0;
+      document.querySelectorAll("#sideA > div").forEach(div => {
+        const [pet, variation] = div.querySelectorAll("select");
+        if (pets[pet.value] && pets[pet.value][variation.value] != null) {
+          totalA += pets[pet.value][variation.value];
+        }
+      });
+      document.querySelectorAll("#sideB > div").forEach(div => {
+        const [pet, variation] = div.querySelectorAll("select");
+        if (pets[pet.value] && pets[pet.value][variation.value] != null) {
+          totalB += pets[pet.value][variation.value];
+        }
+      });
+
+      document.getElementById("totalA").textContent = totalA;
+      document.getElementById("totalB").textContent = totalB;
+
+      let result = "";
+      let profitLoss = "";
+      if (totalA > totalB) {
+        result = "❌ You Lose the Trade";
+        profitLoss = `Loss: ${totalA - totalB}`;
+      } else if (totalB > totalA) {
+        result = "✅ You Win the Trade";
+        profitLoss = `Profit: ${totalB - totalA}`;
+      } else {
+        result = "🤝 Fair Trade";
+        profitLoss = "No profit or loss.";
+      }
+
+      document.getElementById("result").textContent = result;
+      document.getElementById("profitLoss").textContent = profitLoss;
+    }
+
+    // Init
+    loadPets();
+  </script>
+</body>
+</html>
